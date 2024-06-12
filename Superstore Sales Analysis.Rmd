@@ -1,0 +1,329 @@
+---
+title: "SUPERSTORE SALES ANALYSIS"
+output:
+  html_document: default
+---
+________________________________________________________________________
+### Data Source
+For this project, I leveraged a dataset from Kaggle, specifically the "Superstore Sales Dataset" by Rohit Sahoo. This dataset contains information regarding a retail data for 4 years (2015-2018).
+
+### Problem Statement
+In the retail industry, understanding sales, customer behavior and product trends is essential for businesses striving to optimize their operations and enhance customer satisfaction. This dataset focus on online retail transactions, presents an opportunity to uncover critical aspects influencing business performance.
+
+### Objective
+The following are business related questions to our data:
+```
+1. What was the best month for sales? How much was earned that month?
+2. Top 10 states sold the most products?
+3. At what time do we have the highest sales?
+4. Are there certain times the number of items sold peaks or dip significantly? 
+5. What top 10 product sold the most?
+```
+
+### Data Preparation
+```{r libraries, message=FALSE}
+#Loading libraries
+library(janitor)
+library(lubridate)
+library(tidyverse)
+library(webr)
+library(ggplot2)
+library(scales)
+library(maps)
+```
+
+```{r Data, echo=FALSE}
+#Loading the data
+Data <- read.csv("D:\\Data Analysis Projects\\006_Supestore_sales\\train.csv")
+```
+
+### Data Cleaning
+```{r column names,message=FALSE, results='hide'}
+#Changing column names                 
+Data <- clean_names(Data)
+colnames(Data)
+```
+
+```{r data type, message=FALSE, results='hide'}
+#Checking data types
+str(Data)
+#Changing data types for order_date and ship_date columns
+Data$order_date <- as.Date(Data$order_date, '%d/%m/%Y')
+Data$ship_date <- as.Date(Data$ship_date, '%d/%m/%Y')
+str(Data)
+```
+
+```{r null values, message=FALSE, results='hide'}
+#Checking for null values
+sum(is.na(Data))
+#Where are the null values
+sapply(Data, function(x)which(is.na(x)))
+#Highlight the rows with null values
+null_values <- Data[c(2235, 5275, 8799, 9147, 9148, 9149, 9387, 9388, 9389, 9390, 9742),]
+null_values
+#The null values are the Postal Code for Vermont, Burlington, United States.
+#Replacing the null with the correct Postal Code of Burlington city in Vermont state ; 05401-05408
+Data$postal_code <- replace_na(Data$postal_code,05401)
+```
+
+```{r duplicate rows, message=FALSE, results='hide'}
+#Checking for duplicate rows
+sum(duplicated(Data))
+```
+
+```{r attach, message=FALSE, results='hide'}
+#Attach the data
+attach(Data)
+```
+
+### Data Exploration
+#### Order Analysis
+```{r order analysis}
+#Total number of orders:
+length(order_id)
+#Total number of unique orders:
+length(unique(order_id))
+#Order sales
+sales_by_order_id <- aggregate(sales~order_id, data = Data, sum) %>%
+  arrange(desc(sales))
+#Top 5 orders by sum
+top_orders <- head(sales_by_order_id, 5)
+top_orders
+#Bottom 5 orders by  sum
+bottom_orders <- tail(sales_by_order_id, 5)
+bottom_orders
+```
+
+Insight:
+```
+1. A total of 9800 orders and 4922 unique orders were made from Jan 2015 to Dec 2018
+2. Order 'CA-2015-145317' leads in sales with $23661.23
+3. Order 'CA-2018-124114' has the lowest sales with $0.556.	
+```
+
+#### Category and Sub-category Analysis
+```{r category and sub-category, message=FALSE, warning=FALSE}
+#Main category sales
+category_sum <- aggregate(sales~category, data = Data, sum) %>%
+  arrange(desc(sales))
+category_sum
+#Sub-category sales
+sub_category_sum <- aggregate(sales~sub_category, data = Data, sum) %>%
+  arrange(desc(sales))
+sub_category_sum
+#Mean of sales by categories:
+round(sum(sales)/length(unique(category)),2)
+#Mean of sales by sub-categories:
+round(sum(sales)/length(unique(sub_category)),2)
+```
+
+```{r main and subcategory plot, warning=FALSE}
+#Pie plot
+table_1 <- Data %>%
+  group_by(category, sub_category) %>%
+  summarise(sales = sum(sales))
+PieDonut(table_1,
+         aes(category, sub_category, count = sales),
+         title = "Main and Sub-category Sales")
+#Sub-category bar plot
+ggplot(data = Data, aes(x = sub_category, y = sales)) +
+  geom_bar(stat = "identity", fill = "grey") +
+  geom_hline(yintercept = sum(sales)/length(unique(sub_category)), color = "blue", lwd = 0.75) +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Sales by Sub-Category", x = "Sub-Category", y = "Sales") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle = 90, vjust = 0.5))
+```
+
+Insight:
+```
+1. In main category, "Technology" has the highest sales with 36.6% and Total Sales of $827455.9
+2. In sub-category, "Phones" has the highest sales with 39.61% and Total Sales of $327782.45
+3. Out of 17 only 8 sub-categories of products had Total Sales above the Average Sales.
+```
+##### Product Analysis
+```{r product rankings, warning=FALSE}
+#Product rankings
+product_ranking <- Data %>%
+  group_by(product_id) %>%
+  summarise(total_orders = length(product_id), average_price = mean(sales)) %>%
+  arrange(desc(total_orders))
+#Top 10 products
+top_products <- head(product_ranking, 10)
+top_products
+```
+
+Insight:
+```
+The most ordered product is 'OFF-PA-10001970' with 19 orders and Average Price of $114.07
+```
+##### Date Analysis
+```{r date analysis}
+#Total sales by year
+year_sales <- Data %>%
+  group_by(year = year(order_date)) %>%
+  summarize(total_sales = sum(sales)) %>%
+  mutate(rate  = (total_sales - dplyr::lag(total_sales))/dplyr::lag(total_sales)*100)
+year_sales
+#Average sales by month  and total orders over the years
+month_sales <- Data %>%
+  group_by(month = month(order_date)) %>%
+  summarize(total_orders = length(order_id), average_sales = mean(sales)) %>%
+  mutate(average_rate  = (average_sales - dplyr::lag(average_sales))/dplyr::lag(average_sales)*100, 
+         orders_rate  = (total_orders - dplyr::lag(total_orders))/dplyr::lag(total_orders)*100)
+month_sales
+#Time with highest sales
+time_sales <- Data %>%
+  group_by(order_date) %>%
+  summarize(total_sales = sum(sales)) %>%
+  arrange(desc(total_sales))
+head(time_sales,3)
+#Time with highest orders
+time_orders <- Data %>%
+  group_by(order_date) %>%
+  summarize(total_orders = length(order_date)) %>%
+  arrange(desc(total_orders))
+head(time_orders,3)
+#Plot of sales by ordered date
+ggplot(Data, aes(x = order_date, y = sales)) +
+  geom_line() +
+  scale_y_continuous(labels = comma) +
+  scale_x_date(labels = date_format("%b-%Y")) +
+  labs(title = "Sales by Ordered Date", x = "Date", y = "Sales") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle = 90, vjust = 0.5))
+#Plot of sales by shipped date
+ggplot(Data, aes(x = ship_date, y = sales)) +
+  geom_line() +
+  scale_y_continuous(labels = comma) +
+  scale_x_date(labels = date_format("%b-%Y")) +
+  labs(title = "Sales by Shipped Date", x = "Date", y = "Sales") +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle = 90, vjust = 0.5))
+```
+
+Insight:
+```
+1. There was significant decrease of 4.26% in sales from 2015 to 2016.
+2. In 2018, the highest Total Sales was recorded with $722052 while 2016 had the lowest total sales of $459436.
+3. March had the highest Average Sales with $290.55 and February had the lowest Average Sales with $199.90
+4. There was a significant increase of 45.35% from February to March.
+5. There was a significant decrease of 28.61% from March to April.
+6. Over the years, November had the highest total number of orders with 1449.
+7. On 18th March 2015, recorded the highest Total Sales.
+8. On 5th Sept 2017, recorded the highest number of orders.
+```
+
+##### Shipping Analysis
+```{r shipping analysis}
+#Shipping rankings
+shipping_ranking <- Data %>%
+  group_by(ship_mode) %>%
+  summarise(orders_shipped = length(ship_mode)) %>%
+  arrange(desc(orders_shipped))
+shipping_ranking
+#Plot for ship mode rankings
+PieDonut(shipping_ranking,
+         aes(ship_mode, count = orders_shipped),
+         title = "Shipping modes")
+```
+
+Insight:
+```
+1. The most used shipping mode is 'Standard Class' by 59.8% with a count of 5859.
+2. The least used shipping mode is 'Same Day' by 5.5% with a count of 538.
+```
+
+##### Customer Analysis
+```{r customer analysis}
+#Segment sales
+segment_sales <- Data %>%
+  group_by(segment) %>%
+  summarise(total_ordered = length(segment),
+            total_sales = sum(sales),
+            average_sales = mean(sales)) %>%
+  arrange(desc(total_ordered))
+segment_sales
+#Plot of segment by sales
+PieDonut(segment_sales,
+         aes(segment, count = total_sales),
+         title = "Total Sales by Segment")
+#Customer rankings
+customer_ranking <- Data %>%
+  group_by(customer_id) %>%
+  summarise(total_ordered = length(customer_id)) %>%
+  arrange(desc(total_ordered))
+#Top 3 customers
+top_customers <- head(customer_ranking, 3)
+top_customers
+```
+
+Insight:
+```
+1. 'Consumer' customers have the highest number of orders by 5101.
+2. 'Consumer' customers generated the highest Total Sales of 51% with $1148060.5 and the lowest Average Sales of $225.07
+3. 'Home Office' customers have the highest Average Sales with $243.40
+4. The highest number of orders by a customer is 35.
+```
+
+##### Geographical Analysis
+```{r geographic  analysis}
+#Region sales
+region_sales <- Data %>%
+  group_by(region) %>%
+  summarise(total_ordered = length(region),
+            total_sales = sum(sales),
+            average_sales = mean(sales)) %>%
+  arrange(desc(total_sales))
+region_sales
+#Plot of region by sales
+PieDonut(region_sales,
+         aes(region, count = total_sales),
+         title = "Total Sales by Region")
+#State sales
+state_sales <- Data %>%
+  group_by(state) %>%
+  summarise(total_ordered = length(state),
+            total_sales = sum(sales),
+            average_sales = mean(sales)) %>%
+  arrange(desc(total_sales))
+head(state_sales, 10)
+#City sales
+city_sales <- Data %>%
+  group_by(city) %>%
+  summarise(total_ordered = length(city),
+            total_sales = sum(sales),
+            average_sales = mean(sales)) %>%
+  arrange(desc(total_sales))
+head(city_sales, 5)
+
+#Mapping by state
+state_sales_2 <- Data %>%
+  group_by(state) %>%
+  summarise(total_sales = sum(sales))
+colnames(state_sales_2) <- c("region", "sales")
+state_sales_2$region <- tolower(state_sales_2$region)
+us_state <- map_data("state")
+statemap <- merge(us_state, state_sales_2, by = "region")
+ggplot(statemap, aes(long, lat, group = group)) +
+  geom_polygon(aes(fill = sales), color = "white") +
+  theme_void() +
+  scale_fill_continuous(name = "Sales", low = 'lightblue', high = 'darkblue', label = comma) +
+  labs(title = "Sales by State") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Insight:
+```
+1. The West region generated the highest Total Sales of $710219.7 that is 31.4% while the South region had the lowest Total Sales of $389151.5 that is 17.2%.
+2. The state of California had the highest Total Sales of $446306.46 followed by New York with $306361.15
+3. New York City generated the highest Total Sales of $252462.55 and total number of orders is 1946.
+```
+
+### Recommendations
+```
+1. Show more ads during the months of March and April. Try special promotions or flash sales during these months to get more people interested and make conversions.
+2. Consider adding more similar products (Phones) or using similar stategies to sell more things overall.
+3. Plan your stock items and staff based on the most popular product and the months when the most people  shop. Make sure you always have available products (especially products that sold the most) and your team is ready to help customers during these times.
+4. Leverage high March sales to plan exciting marketing campaigns. Think about special promotions or events that customers will love during this time. 
+```
